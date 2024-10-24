@@ -1,0 +1,8 @@
+{
+  "urls": [
+    ["mpu6886.py", "github:jonnor/micropython-mpu6886/mpu6886.py"]
+  ],
+  "deps": [
+  ],
+  "version": "0.1"
+}
