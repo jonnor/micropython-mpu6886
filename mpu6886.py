@@ -214,6 +214,60 @@ class MPU6886:
         elif GYRO_FS_SEL_2000DPS == value:
             return _GYRO_SO_2000DPS
 
+    def fifo_enable(self, enable):
+        _CONFIG
+        FIFO_MODE = 6
+        FIFO_MODE = 0 # 0: replacing the oldest data when full, 1: no new writes
+
+        REG_FIFO_EN = 0x23
+        GYRO_FIFO_EN = 4
+        ACCEL_FIFO_EN = 3
+
+        REG_USER_CTRL = 0x6A
+        FIFO_EN = 6
+        #FIFO_RST = 2
+
+    def set_odr(self, odr):
+
+        REG_SMPLRT_DIV = 
+
+        samplerate_div = {
+            50: 19,
+            100: 9,
+            200: 4,
+            250: 3,
+        }
+
+        # TODO: set 4x AVERAGES
+
+    def get_fifo_count(self):
+        """
+        Return the number of samples ready in the FIFO
+        """
+        FIFO_COUNTH = 0x72
+        buf = bytearray(2)
+        self.i2c.readfrom_mem_into(self.address, FIFO_COUNTH, buf)
+        fifo_count = struct.unpack('<H')
+        return fifo_count
+
+    def read_samples_into(self, buf):
+        """
+        Read accelerometer samples from the FIFO
+
+        NOTE: caller is responsible for ensuring that enough samples are ready.
+        Typically by calling get_fifo_count() first
+        """
+        n_bytes = len(buf)
+        if (n_bytes % 6) != 0:
+            raise ValueError("Buffer should be a multiple of 6")
+        samples = n_bytes // 6
+        if samples > 31:
+            raise ValueError("Requested samples exceeds FIFO capacity")
+
+        # MULTI_READ is a lis2dh specific marker that enables auto-increment
+        self.i2c.readfrom_mem_into(self.addr, (REG_OUT_X_L | MULTI_READ), buf)
+
+
     def __enter__(self):
         return self
 
