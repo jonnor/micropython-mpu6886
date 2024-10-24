@@ -28,6 +28,7 @@ __version__ = "0.1.0-dev"
 
 # pylint: disable=import-error
 import ustruct
+import struct
 import utime
 from machine import I2C, Pin
 from micropython import const
@@ -105,6 +106,8 @@ class MPU6886:
         self._accel_sf = accel_sf
         self._gyro_sf = gyro_sf
         self._gyro_offset = gyro_offset
+
+        self.bytes_per_sample = 8 # 3x2 bytes accelerometer, 2 bytes temperature
 
     @property
     def acceleration(self):
@@ -213,6 +216,119 @@ class MPU6886:
             return _GYRO_SO_1000DPS
         elif GYRO_FS_SEL_2000DPS == value:
             return _GYRO_SO_2000DPS
+
+    def fifo_enable(self, enable):
+
+        value = self._register_char(_CONFIG)
+        FIFO_MODE_BIT = 6
+        # should be cleared by user
+        value &= ~(1 << 7)
+        # clear FIFO_MODE, replace oldest data
+        value &= ~(1 << FIFO_MODE_BIT)
+        # set FIFO_MODE, no new writes
+        #value |= (1 << FIFO_MODE_BIT)
+        self._register_char(_CONFIG, value)
+
+        REG_FIFO_EN = 0x23
+        GYRO_FIFO_EN = 4
+        ACCEL_FIFO_EN = 3
+
+        value = self._register_char(REG_FIFO_EN)
+        value |= (1 << ACCEL_FIFO_EN)
+        self._register_char(REG_FIFO_EN, value)
+
+        # TODO: support gyro
+        #value |= (1 << GYRO_FIFO_EN)
+
+        REG_USER_CTRL = 0x6A
+        FIFO_EN = 6
+        FIFO_RST = 2
+        value = self._register_char(REG_USER_CTRL)
+        value |= (1 << FIFO_EN)
+        value |= (1 << FIFO_RST)
+        self._register_char(REG_USER_CTRL, value)
+
+
+    def set_odr(self, odr):
+        REG_PWR_MGMT_1 = 0x6B
+        CYCLE_BIT = 5
+        REG_SMPLRT_DIV = 0x19
+        REG_ACCEL_CONFIG2 = 0x1D
+        REG_LP_MODE_CFG = 0x1E
+
+        # enable low-power mode
+        value = self._register_char(REG_PWR_MGMT_1)
+        value |= (1 << CYCLE_BIT)
+        self._register_char(REG_PWR_MGMT_1, value=value)
+
+        samplerate_div = {
+            10: 99,
+            50: 19,
+            100: 9,
+            200: 4,
+            250: 3,
+        }
+
+        value = self._register_char(REG_ACCEL_CONFIG2)
+        # clear register
+        value &= ~(0b111111)
+        # average 4x samples
+        # DEC2_CFG = 0
+        # bits 5:4 and 3 stay cleared
+        # low pass filter, A_DLPF_CFG = 7
+        value |= 0b111        
+        self._register_char(REG_ACCEL_CONFIG2, value=value)
+
+        # NOTE: SMPLRT_DIV register is only effective when
+        # FCHOICE_B register bits are 2’b00, and (0 < DLPF_CFG < 7).
+        div = samplerate_div[odr]
+        self._register_char(REG_SMPLRT_DIV, value=div)
+
+        REG_GYRO_CONFIG = 0x1B
+        value = self._register_char(REG_GYRO_CONFIG)
+        value &= ~(0b11)  # FCHOICE_B = 0b00
+        self._register_char(REG_GYRO_CONFIG, value=value)
+
+        value = self._register_char(_CONFIG)
+        value &= ~(1 << 7) # should be cleared by user
+        # DLPF_CFG = 0b01
+        value &= ~(0b111)
+        value |= 0b1
+        self._register_char(_CONFIG, value)
+
+        # TODO: also setup gyro filters
+        # REG_LP_MODE_CFG
+        #G_AVGCFG = 2
+        # 
+
+    def get_fifo_count(self):
+        """
+        Return the number of samples ready in the FIFO
+        """
+        REG_FIFO_COUNTH = 0x72
+        buf = bytearray(2)
+        self.i2c.readfrom_mem_into(self.address, REG_FIFO_COUNTH, buf)
+        fifo_bytes = struct.unpack('>H', buf)[0]
+        fifo_count = fifo_bytes // self.bytes_per_sample
+        return fifo_count
+
+    def read_samples_into(self, buf):
+        """
+        Read accelerometer samples from the FIFO
+
+        NOTE: caller is responsible for ensuring that enough samples are ready.
+        Typically by calling get_fifo_count() first
+        """
+        n_bytes = len(buf)
+        if (n_bytes % self.bytes_per_sample) != 0:
+            raise ValueError("Buffer should be a multiple of 6")
+        samples = n_bytes // self.bytes_per_sample
+        if n_bytes > 1024:
+            raise ValueError("Requested samples exceeds FIFO capacity")
+
+        REG_FIFO_R_W = 0x74
+        self.i2c.readfrom_mem_into(self.address, REG_FIFO_R_W, buf)
+
 
     def __enter__(self):
         return self
