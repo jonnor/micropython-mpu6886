@@ -28,6 +28,7 @@ __version__ = "0.1.0-dev"
 
 # pylint: disable=import-error
 import ustruct
+import struct
 import utime
 from machine import I2C, Pin
 from micropython import const
@@ -215,23 +216,44 @@ class MPU6886:
             return _GYRO_SO_2000DPS
 
     def fifo_enable(self, enable):
-        _CONFIG
-        FIFO_MODE = 6
-        FIFO_MODE = 0 # 0: replacing the oldest data when full, 1: no new writes
+
+        value = self._register_char(_CONFIG)
+        FIFO_MODE_BIT = 6
+
+        # clear FIFO_MODE, replace oldest data
+        value &= ~(1 << FIFO_MODE_BIT)
+        # set FIFO_MODE, no new writes
+        #value |= (1 << FIFO_MODE_BIT)
+        self._register_char(_CONFIG, value)
 
         REG_FIFO_EN = 0x23
         GYRO_FIFO_EN = 4
         ACCEL_FIFO_EN = 3
 
+        value = self._register_char(REG_FIFO_EN)
+        value |= (1 << ACCEL_FIFO_EN)
+        self._register_char(REG_FIFO_EN, value)
+
+        # TODO: support gyro
+        #value |= (1 << GYRO_FIFO_EN)
+
         REG_USER_CTRL = 0x6A
         FIFO_EN = 6
-        #FIFO_RST = 2
+        FIFO_RST = 2
+        value = self._register_char(REG_USER_CTRL)
+        value |= (1 << FIFO_EN)
+        value |= (1 << FIFO_RST)
+        self._register_char(REG_USER_CTRL, value)
+
 
     def set_odr(self, odr):
 
-        REG_SMPLRT_DIV = 
+        REG_SMPLRT_DIV = 0x19
+        REG_ACCEL_CONFIG2 = 0x1D
+        REG_LP_MODE_CFG = 0x1E
 
         samplerate_div = {
+            10: 99,
             50: 19,
             100: 9,
             200: 4,
@@ -240,14 +262,51 @@ class MPU6886:
 
         # TODO: set 4x AVERAGES
 
+        value = self._register_char(REG_ACCEL_CONFIG2)
+        # clear register
+        value &= ~(0b111111)
+        # average 4x samples
+        # DEC2_CFG = 0
+        # bits 5:4 and 3 stay cleared
+        # low pass filter, A_DLPF_CFG = 7
+        value |= 0b111
+
+        self._register_char(REG_ACCEL_CONFIG2, value=value)
+
+        # NOTE: This register is only effective when
+        # FCHOICE_B register bits are 2’b00, and (0 < DLPF_CFG < 7).
+        div = samplerate_div[odr]
+        self._register_char(REG_SMPLRT_DIV, value=div)
+
+
+        REG_GYRO_CONFIG = 0x1B
+        print('ODR', odr, div)
+
+        value = self._register_char(REG_GYRO_CONFIG)
+        value &= ~(0b11)  # FCHOICE_B = 0b00
+        self._register_char(REG_GYRO_CONFIG, value=value)
+
+        value = self._register_char(_CONFIG)
+        # DLPF_CFG = 0b01
+        value &= ~(0b111)
+        value |= 0b1
+        self._register_char(_CONFIG, value)
+
+        # TODO: also setup gyro filters
+        # REG_LP_MODE_CFG
+        #G_AVGCFG = 2
+        # 
+
     def get_fifo_count(self):
         """
         Return the number of samples ready in the FIFO
         """
-        FIFO_COUNTH = 0x72
+        REG_FIFO_COUNTH = 0x72
         buf = bytearray(2)
-        self.i2c.readfrom_mem_into(self.address, FIFO_COUNTH, buf)
-        fifo_count = struct.unpack('<H')
+        self.i2c.readfrom_mem_into(self.address, REG_FIFO_COUNTH, buf)
+        fifo_bytes = struct.unpack('>H', buf)[0]
+        fifo_count = fifo_bytes // (3*6)
+        # TODO: support gyro
         return fifo_count
 
     def read_samples_into(self, buf):
@@ -261,11 +320,12 @@ class MPU6886:
         if (n_bytes % 6) != 0:
             raise ValueError("Buffer should be a multiple of 6")
         samples = n_bytes // 6
-        if samples > 31:
+        if n_bytes > 1024:
             raise ValueError("Requested samples exceeds FIFO capacity")
 
+        ACCEL_XOUT_H = 0x3B
         # MULTI_READ is a lis2dh specific marker that enables auto-increment
-        self.i2c.readfrom_mem_into(self.addr, (REG_OUT_X_L | MULTI_READ), buf)
+        self.i2c.readfrom_mem_into(self.address, ACCEL_XOUT_H, buf)
 
 
     def __enter__(self):

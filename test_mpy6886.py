@@ -23,16 +23,33 @@ def main():
     i2c = I2C(sda=21, scl=22, freq=100000)
     mpu = MPU6886(i2c)
 
-    threshold = 10
+    mpu.fifo_enable(True)
+    mpu.set_odr(10)
+
+    threshold = 5
     chunk = bytearray(3*2*threshold)
 
+    next_log = time.time() + 1.0
+    samples_read = 0
     while True:
 
+        #a = mpu.acceleration
+        #print(a)
+
         count = mpu.get_fifo_count()
+        #print(count)
         if count >= threshold:
-            accel.read_samples_into(chunk_buf)
-            data = int16_from_bytes(chunk)
+            mpu.read_samples_into(chunk)
+        #    data = int16_from_bytes(chunk)
+            samples_read += threshold
+        #    print(data)
 
-            print(data)
+        if time.time() >= next_log:
+            print(time.time(), samples_read)
+            next_log = time.time() + 1.0
 
-        time.sleep_ms(100)
+        time.sleep_ms(1)
+
+
+if __name__ == '__main__':
+    main()
