@@ -312,4 +312,22 @@ class MPU6886:
         REG_FIFO_R_W = 0x74
         self.i2c.readfrom_mem_into(self.address, REG_FIFO_R_W, buf)
 
+    def deinterleave_samples(self, buf : bytearray,
+            xs, ys, zs):
+        """
+        Convert raw bytes into X,Y,Z int16 arrays
+        """
+        assert (len(buf) % self.bytes_per_sample) == 0
+        samples = len(buf) // self.bytes_per_sample
+        assert len(xs) == samples
+        assert len(ys) == samples
+        assert len(zs) == samples
+
+        #view = memoryview(buf)
+        for i in range(samples):
+            # NOTE: temperature (follows z) is ignored
+            x, y, z = struct.unpack_from('>hhh', buf, i*self.bytes_per_sample)
+            xs[i] = x
+            ys[i] = y
+            zs[i] = z
 
