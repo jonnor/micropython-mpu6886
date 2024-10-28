@@ -329,8 +329,3 @@ class MPU6886:
         self.i2c.readfrom_mem_into(self.address, REG_FIFO_R_W, buf)
 
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exception_type, exception_value, traceback):
-        pass
