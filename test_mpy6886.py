@@ -12,7 +12,7 @@ def int16_from_bytes(buf):
 
     
 
-    gen = (struct.unpack("<h", buf[i:i+3])[0] for i in range(0, len(buf), 2))
+    gen = (struct.unpack(">h", buf[i:i+3])[0] for i in range(0, len(buf), 2))
     arr = array.array('h', gen)
     assert len(arr) == len(buf)//2
 
@@ -26,8 +26,9 @@ def main():
     mpu.fifo_enable(True)
     mpu.set_odr(10)
 
-    threshold = 5
-    chunk = bytearray(3*2*threshold)
+    threshold = 1
+    bytes_per_sample = 8 # XXYYZZTT, where TT is temperature
+    chunk = bytearray(bytes_per_sample*threshold)
 
     next_log = time.time() + 1.0
     samples_read = 0
@@ -37,18 +38,25 @@ def main():
         #print(a)
 
         count = mpu.get_fifo_count()
-        #print(count)
         if count >= threshold:
             mpu.read_samples_into(chunk)
-        #    data = int16_from_bytes(chunk)
             samples_read += threshold
+            after = mpu.get_fifo_count()
+            print('read', count, len(chunk)//bytes_per_sample, after)
+            print(chunk)
+            data = int16_from_bytes(chunk)
+
+            t = mpu.temperature
+
+            tt = [ (v/326.8)+25.0 for v in data ]
+            print(data, tt, t)
         #    print(data)
 
         if time.time() >= next_log:
-            print(time.time(), samples_read)
+            print('status', time.time(), samples_read)
             next_log = time.time() + 1.0
 
-        time.sleep_ms(1)
+        time.sleep_ms(10)
 
 
 if __name__ == '__main__':
