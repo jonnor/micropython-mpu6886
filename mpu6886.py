@@ -27,9 +27,8 @@ MicroPython I2C driver for MPU6886 6-axis motion tracking device
 __version__ = "0.2.0-dev"
 
 # pylint: disable=import-error
-import ustruct
 import struct
-import utime
+import time
 from machine import I2C, Pin
 from micropython import const
 # pylint: enable=import-error
@@ -98,7 +97,7 @@ class MPU6886:
             raise RuntimeError("MPU6886 not found in I2C bus.")
 
         self._register_char(_PWR_MGMT_1, 0b10000000) # reset
-        utime.sleep_ms(100)
+        time.sleep_ms(100)
         self._register_char(_PWR_MGMT_1, 0b00000001) # autoselect clock
 
         self._accel_so = self._accel_fs(accel_fs)
@@ -161,7 +160,7 @@ class MPU6886:
         n = float(count)
 
         while count:
-            utime.sleep_ms(delay)
+            time.sleep_ms(delay)
             gx, gy, gz = self.gyro
             ox += gx
             oy += gy
@@ -174,21 +173,21 @@ class MPU6886:
     def _register_short(self, register, value=None, buf=bytearray(2)):
         if value is None:
             self.i2c.readfrom_mem_into(self.address, register, buf)
-            return ustruct.unpack(">h", buf)[0]
+            return struct.unpack(">h", buf)[0]
 
-        ustruct.pack_into(">h", buf, 0, value)
+        struct.pack_into(">h", buf, 0, value)
         return self.i2c.writeto_mem(self.address, register, buf)
 
     def _register_three_shorts(self, register, buf=bytearray(6)):
         self.i2c.readfrom_mem_into(self.address, register, buf)
-        return ustruct.unpack(">hhh", buf)
+        return struct.unpack(">hhh", buf)
 
     def _register_char(self, register, value=None, buf=bytearray(1)):
         if value is None:
             self.i2c.readfrom_mem_into(self.address, register, buf)
             return buf[0]
 
-        ustruct.pack_into("<b", buf, 0, value)
+        struct.pack_into("<b", buf, 0, value)
         return self.i2c.writeto_mem(self.address, register, buf)
 
     def _accel_fs(self, value):
